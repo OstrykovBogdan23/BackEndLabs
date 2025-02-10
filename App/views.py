@@ -84,7 +84,7 @@ def delete_category(category_id):
 @app.route('/record', methods=['POST'])
 def create_record():
     data = request.json
-    record_id = len.records+1
+    record_id = len(records)+1
     records[record_id] = {
         "id": record_id,
         "user_id": data["user_id"],
