@@ -1,8 +1,9 @@
-from App import app
+from app import app, db
 from flask import Flask
 from flask import jsonify
 from flask import request
 from datetime import datetime
+from models import User, Income, Category, Record
 
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
@@ -11,112 +12,140 @@ def healthcheck():
         "date": datetime.utcnow().isoformat()
     }), 200
 
-users = {
-    1: {"id": 1, "name": "Bohdan"},
-    2: {"id": 2, "name": "Vlad"},
-    3: {"id": 3, "name": "Sasha"}
-}
-
-categories = {
-    1: {"id": 1, "name": "Food"},
-    2: {"id": 2, "name": "Clothes"},
-    3: {"id": 3, "name": "Entertainment"}
-}
-
-records = {
-    1: {"id": 1, "user_id": 1, "category_id": 1, "amount": 120, "date": "2025-01-27T12:00:00"},
-    2: {"id": 2, "user_id": 2, "category_id": 2, "amount": 800, "date": "2025-01-28T09:30:00"},
-    3: {"id": 3, "user_id": 1, "category_id": 2, "amount": 699, "date": "2025-01-28T09:40:00"},
-    4: {"id": 4, "user_id": 2, "category_id": 3, "amount": 200, "date": "2025-01-28T09:30:00"}
-}
-
 # Користувачі
 @app.route('/user', methods=['POST'])
 def create_user():
-    data = request.json
-    user_id = len(users) + 1
-    users[user_id] = {"id": user_id, "name": data["name"]}
-    return jsonify(users[user_id]), 201
-
-@app.route('/user/<int:user_id>', methods=['GET'])
-def get_user(user_id):
-    return jsonify(users.get(user_id)) if user_id in users else ("Not found", 404)
+    data = request.get_json()
+    new_user = User(name=data["name"])
+    db.session.add(new_user)
+    db.session.commit()
+    return jsonify({"id": new_user.id, "name": new_user.name, "balance": new_user.balance}), 201
 
 @app.route('/users', methods=['GET'])
 def get_users():
-    return jsonify(list(users.values()))
+    users = User.query.all()
+    return jsonify([{ "id": user.id, "name": user.name, "balance": user.balance } for user in users])
+
+@app.route('/user/<int:user_id>', methods=['GET'])
+def get_user(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "Користувач не знайдений"}), 404
+    return jsonify({"id": user.id, "name": user.name, "balance": user.balance})
 
 @app.route('/user/<int:user_id>', methods=['DELETE'])
 def delete_user(user_id):
-    if user_id in users:
-        del users[user_id]
-        return '', 204
-    return "Not found", 404
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "Користувач не знайдений"}), 404
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({"message": "Користувач видалений"}), 200
+
+# Надходження
+@app.route('/income', methods=['POST'])
+def create_income():
+    data = request.get_json()
+    user = User.query.get(data["user_id"])
+    if not user:
+        return jsonify({"error": "Користувач не знайдений"}), 404
+    new_income = Income(user_id=data["user_id"], amount=data["amount"])
+    db.session.add(new_income)
+    user.balance += data["amount"]
+    db.session.commit()
+    return jsonify({"id": new_income.id, "user_id": new_income.user_id, "amount": new_income.amount}), 201
+
+@app.route('/income/<int:income_id>', methods=['GET'])
+def get_income(income_id):
+    income = Income.query.get(income_id)
+    if not income:
+        return jsonify({"error": "Запис не знайдено"}), 404
+    return jsonify({"id": income.id, "user_id": income.user_id, "amount": income.amount})
+
+@app.route('/income/<int:income_id>', methods=['DELETE'])
+def delete_income(income_id):
+    income = Income.query.get(income_id)
+    if not income:
+        return jsonify({"error": "Запис не знайдено"}), 404
+    db.session.delete(income)
+    db.session.commit()
+    return jsonify({"message": "Запис видалено"}), 200
 
 
+# Записи витрати
+@app.route('/record', methods=['POST'])
+def create_record():
+    data = request.get_json()
+    user = User.query.get(data["user_id"])
+    if not user:
+        return jsonify({"error": "Користувач не знайдений"}), 404
+    if user.balance < data["amount"]:
+        return jsonify({"error": "Недостатньо коштів"}), 400
+    new_record = Record(user_id=data["user_id"], category=data["category"], amount=data["amount"])
+    db.session.add(new_record)
+    user.balance -= data["amount"]
+    db.session.commit()
+    return jsonify({"id": new_record.id, "user_id": new_record.user_id, "category": new_record.category,
+                    "amount": new_record.amount}), 201
+
+@app.route('/record/<int:record_id>', methods=['GET'])
+def get_record(record_id):
+    record = Record.query.get(record_id)
+    if not record:
+        return jsonify({"error": "Запис не знайдено"}), 404
+    return jsonify({"id": record.id, "user_id": record.user_id, "category": record.category, "amount": record.amount})
+
+@app.route('/record/<int:record_id>', methods=['DELETE'])
+def delete_record(record_id):
+    record = Record.query.get(record_id)
+    if not record:
+        return jsonify({"error": "Запис не знайдено"}), 404
+    db.session.delete(record)
+    db.session.commit()
+    return jsonify({"message": "Запис видалено"}), 200
+
+@app.route('/records', methods=['GET'])
+def get_filtered_records():
+    user_id = request.args.get("user_id", type=int)
+    category = request.args.get("category", type=str)
+
+    query = Record.query
+    if user_id:
+        query = query.filter_by(user_id=user_id)
+    if category:
+        query = query.filter_by(category=category)
+
+    records = query.all()
+    records_list = [{"id": r.id, "user_id": r.user_id, "category": r.category, "amount": r.amount, "date": r.date.isoformat()} for r in records]
+
+    return jsonify(records_list)
 
 # Категорії
 @app.route('/category', methods=['POST'])
 def create_category():
-    data = request.json
-    category_id = len(users) + 1
-    categories[category_id] = {"id": category_id, "name": data["name"]}
-    return jsonify(categories[category_id]), 201
+    data = request.get_json()
+    new_category = Category(name=data["name"])
+    db.session.add(new_category)
+    db.session.commit()
+    return jsonify({"id": new_category.id, "name": new_category.name}), 201
 
 @app.route('/categories', methods=['GET'])
 def get_categories():
-    return jsonify(list(categories.values()))
+    categories = Category.query.all()
+    return jsonify([{ "id": category.id, "name": category.name} for category in categories])
 
 @app.route('/category/<int:category_id>', methods=['GET'])
 def get_category(category_id):
-    return jsonify(categories.get(category_id)) if category_id in categories else ("Not found", 404)
+    category = Category.query.get(category_id)
+    if not category:
+        return jsonify({"error": "Категорію не знайдено"}), 404
+    return jsonify({"id": category.id, "name": category.name})
 
 @app.route('/category/<int:category_id>', methods=['DELETE'])
 def delete_category(category_id):
-    if category_id in categories:
-        del categories[category_id]
-        return '', 204
-    return "Not found", 404
-
-
-
-# Записи витрат
-@app.route('/record', methods=['POST'])
-def create_record():
-    data = request.json
-    record_id = len(records)+1
-    records[record_id] = {
-        "id": record_id,
-        "user_id": data["user_id"],
-        "category_id": data["category_id"],
-        "amount": data["amount"],
-        "date": datetime.utcnow().isoformat()
-    }
-    return jsonify(records[record_id]), 201
-
-@app.route('/record/<int:record_id>', methods=['GET'])
-def get_record(record_id):
-    return jsonify(records.get(record_id)) if record_id in records else ("Not found", 404)
-
-@app.route('/record/<int:record_id>', methods=['DELETE'])
-def delete_record(record_id):
-    if record_id in records:
-        del records[record_id]
-        return '', 204
-    return "Not found", 404
-
-@app.route('/record', methods=['GET'])
-def get_filtered_records():
-    user_id = request.args.get("user_id", type=int)
-    category_id = request.args.get("category_id", type=int)
-
-    if user_id is None and category_id is None:
-        return "User ID або Category ID обов'язкові", 400
-
-    filtered = list(records.values())
-    if user_id is not None:
-        filtered = [r for r in filtered if r["user_id"] == user_id]
-    if category_id is not None:
-        filtered = [r for r in filtered if r["category_id"] == category_id]
-
-    return jsonify(filtered)
+    category = Category.query.get(category_id)
+    if not category:
+        return jsonify({"error": "Категорію не знайдено"}), 404
+    db.session.delete(category)
+    db.session.commit()
+    return jsonify({"message": "Категорію видалено"}), 200
