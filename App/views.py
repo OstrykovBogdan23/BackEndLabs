@@ -3,7 +3,8 @@ from flask import Flask
 from flask import jsonify
 from flask import request
 from datetime import datetime
-from app.models import User, Income, Category, Record
+from app.models import *
+from app.schemas import *
 
 @app.route("/", methods=["GET"])
 def home():
@@ -23,19 +24,19 @@ def create_user():
     new_user = User(name=data["name"])
     db.session.add(new_user)
     db.session.commit()
-    return jsonify({"id": new_user.id, "name": new_user.name, "balance": new_user.balance}), 201
+    return user_schema.jsonify(new_user), 201
 
 @app.route('/users', methods=['GET'])
 def get_users():
     users = User.query.all()
-    return jsonify([{ "id": user.id, "name": user.name, "balance": user.balance } for user in users])
+    return users_schema.jsonify(users)
 
 @app.route('/user/<int:user_id>', methods=['GET'])
 def get_user(user_id):
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "Користувач не знайдений"}), 404
-    return jsonify({"id": user.id, "name": user.name, "balance": user.balance})
+    return user_schema.jsonify(user)
 
 @app.route('/user/<int:user_id>', methods=['DELETE'])
 def delete_user(user_id):
@@ -57,14 +58,14 @@ def create_income():
     db.session.add(new_income)
     user.balance += data["amount"]
     db.session.commit()
-    return jsonify({"id": new_income.id, "user_id": new_income.user_id, "amount": new_income.amount}), 201
+    return income_schema.jsonify(new_income), 201
 
 @app.route('/income/<int:income_id>', methods=['GET'])
 def get_income(income_id):
     income = Income.query.get(income_id)
     if not income:
         return jsonify({"error": "Запис не знайдено"}), 404
-    return jsonify({"id": income.id, "user_id": income.user_id, "amount": income.amount})
+    return income_schema.jsonify(income)
 
 @app.route('/income/<int:income_id>', methods=['DELETE'])
 def delete_income(income_id):
@@ -74,6 +75,7 @@ def delete_income(income_id):
     db.session.delete(income)
     db.session.commit()
     return jsonify({"message": "Запис видалено"}), 200
+
 
 
 # Записи витрати
@@ -89,15 +91,14 @@ def create_record():
     db.session.add(new_record)
     user.balance -= data["amount"]
     db.session.commit()
-    return jsonify({"id": new_record.id, "user_id": new_record.user_id, "category": new_record.category,
-                    "amount": new_record.amount}), 201
+    return record_schema.jsonify(new_record), 201
 
 @app.route('/record/<int:record_id>', methods=['GET'])
 def get_record(record_id):
     record = Record.query.get(record_id)
     if not record:
         return jsonify({"error": "Запис не знайдено"}), 404
-    return jsonify({"id": record.id, "user_id": record.user_id, "category": record.category, "amount": record.amount})
+    return record_schema.jsonify(record)
 
 @app.route('/record/<int:record_id>', methods=['DELETE'])
 def delete_record(record_id):
@@ -120,9 +121,7 @@ def get_filtered_records():
         query = query.filter_by(category=category)
 
     records = query.all()
-    records_list = [{"id": r.id, "user_id": r.user_id, "category": r.category, "amount": r.amount, "date": r.date.isoformat()} for r in records]
-
-    return jsonify(records_list)
+    return records_schema.jsonify(records)
 
 # Категорії
 @app.route('/category', methods=['POST'])
@@ -131,19 +130,19 @@ def create_category():
     new_category = Category(name=data["name"])
     db.session.add(new_category)
     db.session.commit()
-    return jsonify({"id": new_category.id, "name": new_category.name}), 201
+    return category_schema.jsonify(new_category), 201
 
 @app.route('/categories', methods=['GET'])
 def get_categories():
     categories = Category.query.all()
-    return jsonify([{ "id": category.id, "name": category.name} for category in categories])
+    return categories_schema.jsonify(categories)
 
 @app.route('/category/<int:category_id>', methods=['GET'])
 def get_category(category_id):
     category = Category.query.get(category_id)
     if not category:
         return jsonify({"error": "Категорію не знайдено"}), 404
-    return jsonify({"id": category.id, "name": category.name})
+    return category_schema.jsonify(category)
 
 @app.route('/category/<int:category_id>', methods=['DELETE'])
 def delete_category(category_id):
