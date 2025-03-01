@@ -3,7 +3,11 @@ from flask import Flask
 from flask import jsonify
 from flask import request
 from datetime import datetime
-from models import User, Income, Category, Record
+from app.models import User, Income, Category, Record
+
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"message": "App is running"})
 
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
